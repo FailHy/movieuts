@@ -4,30 +4,39 @@ namespace App\Http\Controllers;
 
 use App\Models\Movie;
 use App\Models\Category;
+use App\Services\TmdbService;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Validator;
 
 class MovieController extends Controller
 {
-    public function index()
+    public function index(TmdbService $tmdbService)
     {
-        // Refactor query dengan kondisi pencarian
+        try {
+            $apiMovies = $tmdbService->getPopularMovies();
+        } catch (\Exception $e) {
+            $apiMovies = [];
+            logger()->error('TMDB API Error: ' . $e->getMessage());
+        }
+
         $query = Movie::latest();
         if (request('search')) {
             $query->where('judul', 'like', '%' . request('search') . '%')
                   ->orWhere('sinopsis', 'like', '%' . request('search') . '%');
         }
 
-        $movies = $query->paginate(6)->withQueryString(); // mengaur pagination dengan tujuan menampilkan list moview sebanyak 6
-        return view('homepage', compact('movies'));
+        $localMovies = $query->paginate(6)->withQueryString();
+
+        return view('homepage', [
+            'movies' => $localMovies,
+            'apiMovies' => $apiMovies
+        ]);
     }
 
-    public function detail($id)
+    public function detail(Movie $movie)
     {
-        $movie = Movie::find($id);
         return view('detail', compact('movie'));
     }
 
@@ -39,10 +48,8 @@ class MovieController extends Controller
 
     public function store(Request $request)
     {
-        //   Refactor validasi ke fungsi khusus
         $this->validateMovie($request);
 
-        //   Refactor upload file ke fungsi khusus
         $fileName = $this->handleUploadFoto($request);
 
         Movie::create([
@@ -64,18 +71,15 @@ class MovieController extends Controller
         return view('data-movies', compact('movies'));
     }
 
-    public function form_edit($id)
+    public function form_edit(Movie $movie)
     {
-        $movie = Movie::find($id);
         $categories = Category::all();
         return view('form-edit', compact('movie', 'categories'));
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, Movie $movie)
     {
-        //   Reuse validasi dan upload handler
-        $this->validateMovie($request, $id);
-        $movie = Movie::findOrFail($id);
+        $this->validateMovie($request, $movie->id);
 
         $fileName = $this->handleUploadFoto($request, $movie->foto_sampul);
 
@@ -91,10 +95,8 @@ class MovieController extends Controller
         return redirect('/movies/data')->with('success', 'Data berhasil diperbarui');
     }
 
-    public function delete($id)
+    public function delete(Movie $movie)
     {
-        $movie = Movie::findOrFail($id);
-
         if (File::exists(public_path('images/' . $movie->foto_sampul))) {
             File::delete(public_path('images/' . $movie->foto_sampul));
         }
@@ -104,7 +106,6 @@ class MovieController extends Controller
         return redirect('/movies/data')->with('success', 'Data berhasil dihapus');
     }
 
-    //     dipisah, Validasi Movie (Refactor untuk DRY)
     private function validateMovie(Request $request, $id = null)
     {
         $rules = [
@@ -116,18 +117,16 @@ class MovieController extends Controller
         ];
 
         if (!$id) {
-            // Validasi saat create
             $rules['id'] = ['required', 'string', 'max:255', Rule::unique('movies', 'id')];
             $rules['foto_sampul'] = 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
         } else {
-            // Validasi saat update
-            $rules['foto_sampul'] = 'image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+            $rules['id'] = ['required', 'string', 'max:255', Rule::unique('movies', 'id')->ignore($id)];
+            $rules['foto_sampul'] = 'sometimes|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
         }
 
-        Validator::make($request->all(), $rules)->validate();
+        $request->validate($rules);
     }
 
-    //     dipisah, Handle upload dan hapus file foto
     private function handleUploadFoto(Request $request, $oldFile = null)
     {
         if ($request->hasFile('foto_sampul')) {
