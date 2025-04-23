@@ -2,6 +2,10 @@
 
 use App\Http\Controllers\MovieController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\HomeController;
+use App\Http\Controllers\Api\MovieApiController;
+use App\Services\TmdbService;
+use Illuminate\Http\Request;
 
 /*
 |--------------------------------------------------------------------------
@@ -23,3 +27,5 @@ Route::get('/movies/edit/{id}', [MovieController::class, 'form_edit']);
 
 Route::post('movies/{movie}/update', [MovieController::class, 'update'])->name('movies.update');
 Route::get('movies/delete/{id}', [MovieController::class, 'delete'])->name('movies.delete');
+
+Route::get('/', [HomeController::class, 'homepage']);
